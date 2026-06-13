@@ -29,7 +29,8 @@ char *sys_verilog_keywords[] = {
 };
 
 char *python_keywords[] = {
-		"for","if","in","def","class"
+		"for","if","in","def","class", "async", "return","None","try",
+		"except","else","as", "from", "import", "is","not"
 };
 
 typedef struct hlcolor {
