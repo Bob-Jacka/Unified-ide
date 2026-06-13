@@ -2,7 +2,17 @@
 
 #define KEYWORDS
 
+//Extensions:
+
 char *c_cpp_extensions[] = {".c",".h",".cpp",".hpp",".cc",NULL};
+
+char *python_extensions[] = {".py"};
+
+char *sys_verilog_extensions[] = {};
+
+//Extensions
+
+//Language keywords:
 
 char *c_cpp_keywords[] = {
 	/* C Keywords */
@@ -28,16 +38,19 @@ char *sys_verilog_keywords[] = {
 		//TODO
 };
 
+//available keywords in python language
 char *python_keywords[] = {
 		"for","if","in","def","class", "async", "return","None","try",
 		"except","else","as", "from", "import", "is","not"
 };
 
+//Language keywords
+
 typedef struct hlcolor {
-    int r,g,b;
+    int r, g, b;
 } hlcolor;
 
-struct editorSyntax {
+struct editor_syntax {
     char **filematch;
     char **keywords;
     char singleline_comment_start[2];
@@ -46,7 +59,7 @@ struct editorSyntax {
     int flags;
 };
 
-struct editorSyntax HLDB[] = {
+struct editor_syntax HLDB[] = {
     {
         /* C / C++ */
         c_cpp_extensions,

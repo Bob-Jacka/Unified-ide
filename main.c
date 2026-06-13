@@ -45,7 +45,7 @@ struct abuf {
 
 //active editor keywords:
 enum editorKey {
-     KEY_NULL = 0,       /* NULL */
+		KEY_NULL = 0,       /* NULL */
         CTRL_C = 3,         /* Ctrl-c */
         CTRL_D = 4,         /* Ctrl-d */
         CTRL_F = 6,         /* Ctrl-f */
@@ -69,13 +69,6 @@ enum editorKey {
         END_KEY,
         PAGE_UP,
         PAGE_DOWN
-};
-
-//highlight symbols
-enum editorHighlight {
-  HL_NORMAL = 0,
-  HL_NUMBER,
-  HL_MATCH
 };
 
 typedef struct erow {
@@ -106,7 +99,7 @@ struct Editor_config {
 
 struct Editor_config E; //declare global config variable
 
-char *editor_prompt(const char *prompt, void (*callback)(char *, int));
+char *editor_prompt(const char *prompt, void (*callback)(const char *, int));
 int editor_row_rx_2_cx(erow *row, int rx);
 
 void editor_set_status_msg(const char *fmt, ...) {
@@ -176,8 +169,9 @@ int is_separator(int c) {
 }
 
 int editor_row_has_open_comment(erow *row) {
-    if (row->hl && row->rsize && row->hl[row->rsize-1] == HL_MLCOMMENT &&
-        (row->rsize < 2 || (row->render[row->rsize-2] != '*' || row->render[row->rsize-1] != '/'))) return 1;
+    if (row->hl && row->rsize && row->hl[row->rsize-1] == HL_MLCOMMENT && (row->rsize < 2 || (row->render[row->rsize-2] != '*' || row->render[row->rsize-1] != '/'))) {
+		return 1;
+	}
     return 0;
 }
 
@@ -209,9 +203,53 @@ int editor_syntax_2_color(int hl) {
     case HL_KEYWORD2: return 32;    /* green */
     case HL_STRING: return 35;      /* magenta */
     case HL_NUMBER: return 31;      /* red */
-    case HL_MATCH: return 34;      /* blu */
+    case HL_MATCH: return 34;      /* blue */
     default: return 37;             /* white */
     }
+}
+
+char *editor_rows_2_string(int *buflen) {
+  int totlen = 0;
+  for (int j = 0; j < E.numrows; ++j) {
+	  totlen += E.row[j].size + 1;
+  }
+    
+  *buflen = totlen;
+  char *buf = malloc(totlen);
+  char *p = buf;
+  for (int x = 0; x < E.numrows; ++x) {
+    memcpy(p, E.row[x].chars, E.row[x].size);
+    p += E.row[x].size;
+    *p = '\n';
+    ++p;
+  }
+  return buf;
+}
+
+void editor_update_row(erow *row) { 
+  int tabs = 0;
+  
+  for (int j = 0; j < row->size; ++j)
+    if (row->chars[j] == '\t') {
+		++tabs;
+	}
+  free(row->render);
+  row->render = malloc(row->size + tabs*(TAB_STOP - 1) + 1);
+  int idx = 0;
+  
+  for (int x = 0; x < row->size; ++x) {
+    if (row->chars[x] == '\t') {
+      row->render[idx++] = ' ';
+      while (idx % TAB_STOP != 0) {
+		  row->render[idx++] = ' ';
+	  }
+    } else {
+      row->render[idx++] = row->chars[x];
+    }
+  }
+  row->render[idx] = '\0';
+  row->rsize = idx;
+  editor_update_syntax(row);
 }
 
 void editor_append_row(char *s, size_t len) {
@@ -221,26 +259,11 @@ void editor_append_row(char *s, size_t len) {
   E.row[at].chars = malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  editor_update_row(&E.row[at]);
   ++E.numrows;
-}
-
-char *editor_rows_2_string(int *buflen) {
-  int totlen = 0;
-  int j;
-  for (j = 0; j < E.numrows; ++j) {
-	  totlen += E.row[j].size + 1;
-	}
-    
-  *buflen = totlen;
-  char *buf = malloc(totlen);
-  char *p = buf;
-  for (j = 0; j < E.numrows; ++j) {
-    memcpy(p, E.row[j].chars, E.row[j].size);
-    p += E.row[j].size;
-    *p = '\n';
-    ++p;
-  }
-  return buf;
+  ++E.dirty;
 }
 
 //open file in editor
@@ -249,7 +272,7 @@ void editor_open(char *filename) {
   E.filename = strdup(filename);
   FILE *fp = fopen(filename, "r");
   if (!fp) {
-	  die_hard("fopen");
+	  die_hard("editor_open");
   }
   char *line = NULL;
   size_t linecap = 0;
@@ -385,13 +408,13 @@ void abFree(struct abuf *ab) {
 
 void disable_raw_mode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
-	  die_hard("tcsetattr");
+	  die_hard("disable_raw_mode");
 	}
 }
 
 void enable_raw_mode() {
 	if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
-		die_hard("tcgetattr");
+		die_hard("enable_raw_mode1");
 	}
 	tcgetattr(STDIN_FILENO, &E.orig_termios);
 	atexit(disable_raw_mode); //disable terminal raw state
@@ -407,7 +430,7 @@ void enable_raw_mode() {
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 	
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
-		die_hard("tcsetattr");
+		die_hard("enable_raw_mode2");
 	}
 }
 
@@ -512,31 +535,6 @@ int editor_row_cx_2_rx(erow *row, int cx) {
 	  return 0;
 }
 
-void editor_update_row(erow *row) { 
-  int tabs = 0;
-  int j;
-  
-  for (j = 0; j < row->size; ++j)
-    if (row->chars[j] == '\t') {
-		++tabs;
-	}
-  free(row->render);
-  row->render = malloc(row->size + tabs*(TAB_STOP - 1) + 1);
-  int idx = 0;
-  
-  for (j = 0; j < row->size; ++j) {
-    if (row->chars[j] == '\t') {
-      row->render[idx++] = ' ';
-      while (idx % TAB_STOP != 0) row->render[idx++] = ' ';
-    } else {
-      row->render[idx++] = row->chars[j];
-    }
-  }
-  row->render[idx] = '\0';
-  row->rsize = idx;
-  editor_update_syntax(row);
-}
-
 void editor_insert_row(int at, char *s, size_t len) {
   if (at < 0 || at > E.numrows) {
 	  return;
@@ -587,20 +585,6 @@ void editor_row_del_char(erow *row, int at) {
     E.dirty++;
 }
 
-void editor_append_row(char *s, size_t len) {
-  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-  int at = E.numrows;
-  E.row[at].size = len;
-  E.row[at].chars = malloc(len + 1);
-  memcpy(E.row[at].chars, s, len);
-  E.row[at].chars[len] = '\0';
-  E.row[at].rsize = 0;
-  E.row[at].render = NULL;
-  editor_update_row(&E.row[at]);
-  ++E.numrows;
-  ++E.dirty;
-}
-
 void editor_row_insert_char(erow *row, int at, int c) {
   if (at < 0 || at > row->size) {
 	  at = row->size;
@@ -645,7 +629,7 @@ char editor_read_key() {
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
     if (nread == -1 && errno != EAGAIN) {
-		die_hard("read");
+		die_hard("editor_read_key");
 	}
   }
   return c;
@@ -653,7 +637,7 @@ char editor_read_key() {
 
 /*** input ***/
 
-char *editor_prompt(const char *prompt, void (*callback)(char *, int)) {
+char *editor_prompt(const char *prompt, void (*callback)(const char *, int)) {
   size_t bufsize = 128;
   char *buf = malloc(bufsize);
   size_t buflen = 0;
@@ -717,6 +701,53 @@ void editor_mv_cursor(int key) {
   }
 }
 
+void editor_row_append_string(erow *row, char *s, size_t len) {
+    row->chars = realloc(row->chars,row->size+len+1);
+    memcpy(row->chars+row->size,s,len);
+    row->size += len;
+    row->chars[row->size] = '\0';
+    editor_update_row(row);
+    ++E.dirty;
+}
+
+//delete character from editor string
+void editor_del_char(void) {
+    int filerow = E.rowoff+E.cy;
+    int filecol = E.coloff+E.cx;
+    erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+
+    if (!row || (filecol == 0 && filerow == 0)) return;
+    if (filecol == 0) {
+        filecol = E.row[filerow-1].size;
+        editor_row_append_string(&E.row[filerow-1],row->chars,row->size);
+        editor_del_row(filerow);
+        row = NULL;
+        if (E.cy == 0) {
+			--E.rowoff;
+		} else {
+			--E.cy;
+		}
+        E.cx = filecol;
+        if (E.cx >= E.screencols) {
+            int shift = (E.screencols-E.cx)+1;
+            E.cx -= shift;
+            E.coloff += shift;
+        }
+    } else {
+        editor_row_del_char(row,filecol-1);
+        if (E.cx == 0 && E.coloff) {
+			E.coloff--;
+		} else {
+			--E.cx;
+		}
+            
+    }
+    if (row) {
+		editor_update_row(row);
+	}
+    ++E.dirty;
+}
+
 //main function to interact with editor
 void editor_process_keypress() {
   static int quit_times = TO_QUIT_TIMES;
@@ -751,11 +782,12 @@ void editor_process_keypress() {
       if (E.cy < E.numrows)
         E.cx = E.row[E.cy].size;
       break;
-      
+     
+    //For deleting
     case BACKSPACE:
     case CTRL_KEY('h'):
     case DEL_KEY:
-      //TODO
+      editor_del_char();
       break;
       
     case PAGE_UP:
@@ -772,6 +804,8 @@ void editor_process_keypress() {
           editor_mv_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
       }
       break;
+      
+    //For moving in editor
     case ARROW_UP:
     case ARROW_DOWN:
     case ARROW_LEFT:
@@ -779,9 +813,12 @@ void editor_process_keypress() {
       editor_mv_cursor(c);
       break;
       
-    case CTRL_KEY('l'):
-    case '\x1b':
-      break;
+    case CTRL_KEY('L'):
+        editor_refresh_screen();
+        break;
+      
+    case ESC:
+        break;
       
     default:
       editor_insert_char(c);
@@ -815,9 +852,11 @@ int main(int argc, char *argv[]) {
 	init_editor();
 	
 	if (argc >= 2) {
-		editor_open(argv[1]);
+		editor_open(argv[1]); //first (second) argument as a file to open
 	}
 	editor_set_status_msg("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+	
+	//infinity cycle for your pleasure
 	while (1) {
 		editor_refresh_screen();
 		editor_process_keypress();
